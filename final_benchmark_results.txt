@@ -1,0 +1,302 @@
+===========================================
+ФИНАЛЬНЫЙ БЕНЧМАРК — суббота, 18 апреля 2026 г. 12:22:37 (MSK)
+===========================================
+
+=== ШАГ 1: СБРОС — удаляем индексы и партиции ===
+DROP INDEX
+DROP INDEX
+NOTICE:  index "idx_orders_status_created_at" does not exist, skipping
+NOTICE:  index "idx_orders_created_at" does not exist, skipping
+DROP INDEX
+NOTICE:  index "idx_order_items_order_id" does not exist, skipping
+DROP INDEX
+NOTICE:  index "idx_orders_user_id" does not exist, skipping
+DROP INDEX
+NOTICE:  index "idx_orders_created_at_brin" does not exist, skipping
+Индексы удалены.
+
+=== ШАГ 2: BASELINE (без индексов) ===
+--- Прогрев кеша ---
+--- 3 замера ---
+-- Запуск 1 --
+--- Q1: Фильтрация по статусу + сортировка по дате ---
+ Execution Time: 6.705 ms
+--- Q2: Фильтрация по статусу + диапазону дат ---
+ Execution Time: 5.981 ms
+--- Q3: JOIN + GROUP BY + агрегация ---
+ Execution Time: 121.440 ms
+--- Q4: Поиск по user_id + сортировка ---
+ Execution Time: 2.575 ms
+-- Запуск 2 --
+--- Q1: Фильтрация по статусу + сортировка по дате ---
+ Execution Time: 6.714 ms
+--- Q2: Фильтрация по статусу + диапазону дат ---
+ Execution Time: 5.955 ms
+--- Q3: JOIN + GROUP BY + агрегация ---
+ Execution Time: 124.467 ms
+--- Q4: Поиск по user_id + сортировка ---
+ Execution Time: 2.887 ms
+-- Запуск 3 --
+--- Q1: Фильтрация по статусу + сортировка по дате ---
+ Execution Time: 6.817 ms
+--- Q2: Фильтрация по статусу + диапазону дат ---
+ Execution Time: 5.821 ms
+--- Q3: JOIN + GROUP BY + агрегация ---
+ Execution Time: 128.226 ms
+--- Q4: Поиск по user_id + сортировка ---
+ Execution Time: 2.609 ms
+
+=== ШАГ 3: СОЗДАЁМ ИНДЕКСЫ ===
+Timing is on.
+=== APPLY INDEXES ===
+CREATE INDEX
+Time: 58.250 ms
+CREATE INDEX
+Time: 17.888 ms
+CREATE INDEX
+Time: 65.422 ms
+CREATE INDEX
+Time: 17.287 ms
+CREATE INDEX
+Time: 6.749 ms
+ANALYZE
+Time: 162.663 ms
+Indexes created successfully!
+
+=== ШАГ 4: ПОСЛЕ ИНДЕКСОВ ===
+--- Прогрев кеша ---
+--- 3 замера ---
+-- Запуск 1 --
+--- Q1: Фильтрация по статусу + сортировка по дате ---
+ Execution Time: 0.174 ms
+--- Q2: Фильтрация по статусу + диапазону дат ---
+ Execution Time: 4.705 ms
+--- Q3: JOIN + GROUP BY + агрегация ---
+ Execution Time: 118.322 ms
+--- Q4: Поиск по user_id + сортировка ---
+ Execution Time: 0.070 ms
+-- Запуск 2 --
+--- Q1: Фильтрация по статусу + сортировка по дате ---
+ Execution Time: 0.187 ms
+--- Q2: Фильтрация по статусу + диапазону дат ---
+ Execution Time: 4.618 ms
+--- Q3: JOIN + GROUP BY + агрегация ---
+ Execution Time: 118.503 ms
+--- Q4: Поиск по user_id + сортировка ---
+ Execution Time: 0.045 ms
+-- Запуск 3 --
+--- Q1: Фильтрация по статусу + сортировка по дате ---
+ Execution Time: 0.201 ms
+--- Q2: Фильтрация по статусу + диапазону дат ---
+ Execution Time: 4.620 ms
+--- Q3: JOIN + GROUP BY + агрегация ---
+ Execution Time: 116.488 ms
+--- Q4: Поиск по user_id + сортировка ---
+ Execution Time: 0.048 ms
+
+=== ШАГ 5: ПОЛНЫЕ ПЛАНЫ ЗАПРОСОВ (для отчёта) ===
+--- BASELINE EXPLAIN ANALYZE ---
+Timing is on.
+=== BEFORE OPTIMIZATION ===
+SET
+Time: 0.082 ms
+SET
+Time: 0.084 ms
+ANALYZE
+Time: 160.674 ms
+--- Q1: Фильтрация по статусу + сортировка по дате ---
+                                                                     QUERY PLAN                                                                      
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=0.42..19.14 rows=100 width=54) (actual time=0.012..0.086 rows=100 loops=1)
+   Buffers: shared hit=102
+   ->  Index Scan using idx_orders_status_created_at on orders  (cost=0.42..9274.04 rows=49537 width=54) (actual time=0.011..0.081 rows=100 loops=1)
+         Index Cond: ((status)::text = 'paid'::text)
+         Buffers: shared hit=102
+ Planning:
+   Buffers: shared hit=47
+ Planning Time: 0.096 ms
+ Execution Time: 0.096 ms
+(9 rows)
+
+Time: 0.409 ms
+--- Q2: Фильтрация по статусу + диапазону дат ---
+                                                                                                QUERY PLAN                                                                                                
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=3379.31..3379.32 rows=1 width=40) (actual time=4.526..4.527 rows=1 loops=1)
+   Buffers: shared hit=1172
+   ->  Bitmap Heap Scan on orders  (cost=757.21..3253.51 rows=25160 width=7) (actual time=1.424..3.187 rows=25157 loops=1)
+         Recheck Cond: (((status)::text = 'paid'::text) AND (created_at >= '2025-01-01 00:00:00'::timestamp without time zone) AND (created_at < '2026-01-01 00:00:00'::timestamp without time zone))
+         Heap Blocks: exact=1073
+         Buffers: shared hit=1172
+         ->  Bitmap Index Scan on idx_orders_status_created_at  (cost=0.00..750.92 rows=25160 width=0) (actual time=1.352..1.352 rows=25157 loops=1)
+               Index Cond: (((status)::text = 'paid'::text) AND (created_at >= '2025-01-01 00:00:00'::timestamp without time zone) AND (created_at < '2026-01-01 00:00:00'::timestamp without time zone))
+               Buffers: shared hit=99
+ Planning:
+   Buffers: shared hit=22
+ Planning Time: 0.059 ms
+ Execution Time: 4.539 ms
+(13 rows)
+
+Time: 4.819 ms
+--- Q3: JOIN + GROUP BY + агрегация ---
+                                                                  QUERY PLAN                                                                   
+-----------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=17640.90..17640.95 rows=20 width=63) (actual time=115.632..115.636 rows=20 loops=1)
+   Buffers: shared hit=6180
+   ->  Sort  (cost=17640.90..17767.88 rows=50791 width=63) (actual time=115.632..115.634 rows=20 loops=1)
+         Sort Key: (sum((oi.price * (oi.quantity)::numeric))) DESC
+         Sort Method: top-N heapsort  Memory: 27kB
+         Buffers: shared hit=6180
+         ->  HashAggregate  (cost=15654.48..16289.37 rows=50791 width=63) (actual time=102.486..111.108 rows=50361 loops=1)
+               Group Key: o.id
+               Batches: 1  Memory Usage: 24081kB
+               Buffers: shared hit=6180
+               ->  Hash Join  (cost=3940.89..13114.93 rows=203164 width=49) (actual time=8.038..62.772 rows=201444 loops=1)
+                     Hash Cond: (oi.order_id = o.id)
+                     Buffers: shared hit=6180
+                     ->  Seq Scan on order_items oi  (cost=0.00..8124.00 rows=400000 width=42) (actual time=0.003..13.617 rows=400000 loops=1)
+                           Buffers: shared hit=4124
+                     ->  Hash  (cost=3306.00..3306.00 rows=50791 width=23) (actual time=8.029..8.029 rows=50361 loops=1)
+                           Buckets: 65536  Batches: 1  Memory Usage: 3231kB
+                           Buffers: shared hit=2056
+                           ->  Seq Scan on orders o  (cost=0.00..3306.00 rows=50791 width=23) (actual time=0.225..4.896 rows=50361 loops=1)
+                                 Filter: (created_at >= '2025-01-01 00:00:00'::timestamp without time zone)
+                                 Rows Removed by Filter: 49639
+                                 Buffers: shared hit=2056
+ Planning:
+   Buffers: shared hit=64
+ Planning Time: 0.139 ms
+ Execution Time: 116.122 ms
+(26 rows)
+
+Time: 116.591 ms
+--- Q4: Поиск по user_id + сортировка ---
+                                                            QUERY PLAN                                                             
+-----------------------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=42.59..42.61 rows=10 width=38) (actual time=0.030..0.030 rows=11 loops=1)
+   Sort Key: orders.created_at DESC
+   Sort Method: quicksort  Memory: 25kB
+   Buffers: shared hit=14
+   InitPlan 1 (returns $0)
+     ->  Limit  (cost=0.00..0.02 rows=1 width=16) (actual time=0.003..0.003 rows=1 loops=1)
+           Buffers: shared hit=1
+           ->  Seq Scan on users  (cost=0.00..204.00 rows=10000 width=16) (actual time=0.002..0.002 rows=1 loops=1)
+                 Buffers: shared hit=1
+   ->  Bitmap Heap Scan on orders  (cost=4.37..42.40 rows=10 width=38) (actual time=0.012..0.025 rows=11 loops=1)
+         Recheck Cond: (user_id = $0)
+         Heap Blocks: exact=11
+         Buffers: shared hit=14
+         ->  Bitmap Index Scan on idx_orders_user_id  (cost=0.00..4.37 rows=10 width=0) (actual time=0.009..0.009 rows=11 loops=1)
+               Index Cond: (user_id = $0)
+               Buffers: shared hit=3
+ Planning:
+   Buffers: shared hit=7 dirtied=1
+ Planning Time: 0.067 ms
+ Execution Time: 0.040 ms
+(20 rows)
+
+Time: 0.270 ms
+
+--- ПОСЛЕ ИНДЕКСОВ EXPLAIN ANALYZE ---
+Timing is on.
+=== AFTER INDEXES ===
+SET
+Time: 0.071 ms
+SET
+Time: 0.089 ms
+--- Q1: Фильтрация по статусу + сортировка по дате ---
+                                                                     QUERY PLAN                                                                      
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=0.42..19.14 rows=100 width=54) (actual time=0.013..0.161 rows=100 loops=1)
+   Buffers: shared hit=102
+   ->  Index Scan using idx_orders_status_created_at on orders  (cost=0.42..9274.04 rows=49537 width=54) (actual time=0.012..0.156 rows=100 loops=1)
+         Index Cond: ((status)::text = 'paid'::text)
+         Buffers: shared hit=102
+ Planning:
+   Buffers: shared hit=194
+ Planning Time: 0.207 ms
+ Execution Time: 0.170 ms
+(9 rows)
+
+Time: 0.788 ms
+--- Q2: Фильтрация по статусу + диапазону дат ---
+                                                                                                QUERY PLAN                                                                                                
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=3379.31..3379.32 rows=1 width=40) (actual time=4.826..4.827 rows=1 loops=1)
+   Buffers: shared hit=1172
+   ->  Bitmap Heap Scan on orders  (cost=757.21..3253.51 rows=25160 width=7) (actual time=1.400..3.429 rows=25157 loops=1)
+         Recheck Cond: (((status)::text = 'paid'::text) AND (created_at >= '2025-01-01 00:00:00'::timestamp without time zone) AND (created_at < '2026-01-01 00:00:00'::timestamp without time zone))
+         Heap Blocks: exact=1073
+         Buffers: shared hit=1172
+         ->  Bitmap Index Scan on idx_orders_status_created_at  (cost=0.00..750.92 rows=25160 width=0) (actual time=1.330..1.330 rows=25157 loops=1)
+               Index Cond: (((status)::text = 'paid'::text) AND (created_at >= '2025-01-01 00:00:00'::timestamp without time zone) AND (created_at < '2026-01-01 00:00:00'::timestamp without time zone))
+               Buffers: shared hit=99
+ Planning:
+   Buffers: shared hit=26
+ Planning Time: 0.057 ms
+ Execution Time: 4.841 ms
+(13 rows)
+
+Time: 5.070 ms
+--- Q3: JOIN + GROUP BY + агрегация ---
+                                                                  QUERY PLAN                                                                   
+-----------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=17640.90..17640.95 rows=20 width=63) (actual time=147.709..147.712 rows=20 loops=1)
+   Buffers: shared hit=6183
+   ->  Sort  (cost=17640.90..17767.88 rows=50791 width=63) (actual time=147.708..147.710 rows=20 loops=1)
+         Sort Key: (sum((oi.price * (oi.quantity)::numeric))) DESC
+         Sort Method: top-N heapsort  Memory: 27kB
+         Buffers: shared hit=6183
+         ->  HashAggregate  (cost=15654.48..16289.37 rows=50791 width=63) (actual time=133.245..142.990 rows=50361 loops=1)
+               Group Key: o.id
+               Batches: 1  Memory Usage: 24081kB
+               Buffers: shared hit=6180
+               ->  Hash Join  (cost=3940.89..13114.93 rows=203164 width=49) (actual time=8.307..84.081 rows=201444 loops=1)
+                     Hash Cond: (oi.order_id = o.id)
+                     Buffers: shared hit=6180
+                     ->  Seq Scan on order_items oi  (cost=0.00..8124.00 rows=400000 width=42) (actual time=0.005..16.803 rows=400000 loops=1)
+                           Buffers: shared hit=4124
+                     ->  Hash  (cost=3306.00..3306.00 rows=50791 width=23) (actual time=8.243..8.244 rows=50361 loops=1)
+                           Buckets: 65536  Batches: 1  Memory Usage: 3231kB
+                           Buffers: shared hit=2056
+                           ->  Seq Scan on orders o  (cost=0.00..3306.00 rows=50791 width=23) (actual time=0.366..4.953 rows=50361 loops=1)
+                                 Filter: (created_at >= '2025-01-01 00:00:00'::timestamp without time zone)
+                                 Rows Removed by Filter: 49639
+                                 Buffers: shared hit=2056
+ Planning:
+   Buffers: shared hit=93
+ Planning Time: 0.147 ms
+ Execution Time: 148.356 ms
+(26 rows)
+
+Time: 148.905 ms
+--- Q4: Поиск по user_id + сортировка ---
+                                                            QUERY PLAN                                                             
+-----------------------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=42.59..42.61 rows=10 width=38) (actual time=0.036..0.037 rows=11 loops=1)
+   Sort Key: orders.created_at DESC
+   Sort Method: quicksort  Memory: 25kB
+   Buffers: shared hit=17
+   InitPlan 1 (returns $0)
+     ->  Limit  (cost=0.00..0.02 rows=1 width=16) (actual time=0.003..0.003 rows=1 loops=1)
+           Buffers: shared hit=1
+           ->  Seq Scan on users  (cost=0.00..204.00 rows=10000 width=16) (actual time=0.002..0.003 rows=1 loops=1)
+                 Buffers: shared hit=1
+   ->  Bitmap Heap Scan on orders  (cost=4.37..42.40 rows=10 width=38) (actual time=0.013..0.025 rows=11 loops=1)
+         Recheck Cond: (user_id = $0)
+         Heap Blocks: exact=11
+         Buffers: shared hit=14
+         ->  Bitmap Index Scan on idx_orders_user_id  (cost=0.00..4.37 rows=10 width=0) (actual time=0.009..0.009 rows=11 loops=1)
+               Index Cond: (user_id = $0)
+               Buffers: shared hit=3
+ Planning:
+   Buffers: shared hit=31
+ Planning Time: 0.142 ms
+ Execution Time: 0.046 ms
+(20 rows)
+
+Time: 0.345 ms
+
+===========================================
+ГОТОВО — суббота, 18 апреля 2026 г. 12:22:40 (MSK)
+===========================================
